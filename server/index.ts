@@ -14,6 +14,7 @@ import {
   sendOTP,
   verifyOTP,
 } from "./routes/auth";
+import { placeOrder } from "./routes/orders";
 
 export function createServer() {
   const app = express();
@@ -48,6 +49,9 @@ export function createServer() {
   // Legacy routes for compatibility
   app.post("/api/auth/send-otp", sendOTP);
   app.post("/api/auth/verify-otp", verifyOTP);
+
+  // Order routes
+  app.post("/api/orders/place", placeOrder);
 
   return app;
 }

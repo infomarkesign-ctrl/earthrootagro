@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ArrowRight, Banknote, Building2, Check, ChevronDown, PackageCheck, ShoppingBag, Smartphone } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ArrowRight, Banknote, Building2, Check, ChevronDown, PackageCheck, ShoppingBag, Smartphone, LogIn } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { MIN_ORDER_AMOUNT, fallbackProductImage, products } from "@/data/siteData";
 import { CartItem, clearCart, getCart } from "@/lib/cart";
 import BrandMark from "@/components/BrandMark";
@@ -10,24 +10,93 @@ type PaymentMethod = "cod" | "upi" | "netbanking";
 const paymentLabels: Record<PaymentMethod, string> = { cod: "Cash on Delivery", upi: "UPI", netbanking: "Net Banking" };
 
 export default function Checkout() {
+  const navigate = useNavigate();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [payment, setPayment] = useState<PaymentMethod>("cod");
   const [delivery, setDelivery] = useState("Mumbai / Maharashtra");
   const [submitted, setSubmitted] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
 
-  useEffect(() => { setCart(getCart()); }, []);
+  useEffect(() => {
+    const token = localStorage.getItem("authToken");
+    const email = localStorage.getItem("userEmail");
+    if (!token || !email) {
+      navigate("/login?redirect=/checkout");
+      return;
+    }
+    setIsLoggedIn(true);
+    setUserEmail(email);
+    setCart(getCart());
+  }, [navigate]);
 
   const lines = cart.map((entry) => ({ entry, product: products.find((item) => item.slug === entry.slug) })).filter((line) => line.product);
   const subtotal = lines.reduce((sum, line) => sum + line.product!.price * line.entry.qty, 0);
   const total = subtotal;
   const belowMinOrder = subtotal < MIN_ORDER_AMOUNT;
 
-  const submitOrder = (event: FormEvent<HTMLFormElement>) => {
+  const submitOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (belowMinOrder) return;
-    setSubmitted(true);
-    clearCart();
+    if (belowMinOrder || !isLoggedIn) return;
+
+    const formData = new FormData(event.currentTarget);
+    const orderData = {
+      fullName: formData.get("fullName"),
+      email: userEmail,
+      workEmail: formData.get("workEmail"),
+      phone: formData.get("phone"),
+      company: formData.get("company"),
+      delivery: delivery,
+      requirements: formData.get("requirements"),
+      payment,
+      items: lines,
+      subtotal,
+      total,
+    };
+
+    try {
+      const response = await fetch("/api/orders/place", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(orderData),
+      });
+
+      if (response.ok) {
+        setSubmitted(true);
+        clearCart();
+      }
+    } catch (error) {
+      console.error("Order submission error:", error);
+    }
   };
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-cream text-forest-950">
+        <CheckoutHeader />
+        <main className="mx-auto flex min-h-[70vh] max-w-3xl items-center px-5 py-16 text-center lg:px-8">
+          <div className="w-full rounded-[32px] bg-white p-8 shadow-[0_20px_60px_rgba(21,43,52,0.08)] sm:p-14">
+            <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-sand-200 text-forest-700">
+              <LogIn size={30} />
+            </span>
+            <p className="eyebrow mt-8">Authentication required</p>
+            <h1 className="section-title mt-4">Log in to checkout</h1>
+            <p className="mx-auto mt-6 max-w-lg leading-7 text-forest-950/60">
+              You must be logged in to place an order. This helps us confirm your order details and send you order confirmation via email.
+            </p>
+            <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+              <Link to="/login" className="rounded-full bg-forest-700 px-6 py-4 text-sm font-bold text-white">
+                Log in to your account
+              </Link>
+              <Link to="/signup" className="rounded-full border border-forest-950/15 px-6 py-4 text-sm font-bold">
+                Create an account
+              </Link>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (submitted) return <div className="min-h-screen bg-cream text-forest-950"><CheckoutHeader /><main className="mx-auto flex min-h-[70vh] max-w-3xl items-center px-5 py-16 text-center lg:px-8"><div className="w-full rounded-[32px] bg-white p-8 shadow-[0_20px_60px_rgba(21,43,52,0.08)] sm:p-14"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-forest-700 text-sand-300"><Check size={30} /></span><p className="eyebrow mt-8">Order received</p><h1 className="section-title mt-4">We’re on it.</h1><p className="mx-auto mt-6 max-w-lg leading-7 text-forest-950/60">Thank you for your order (₹{total.toLocaleString("en-IN")} indicative, via {paymentLabels[payment]}). Our sourcing team will confirm the final quote and {payment === "cod" ? "your order will be paid for in cash on delivery" : payment === "upi" ? "share a UPI payment request" : "share net banking payment instructions"} shortly.</p><div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row"><Link to="/products" className="rounded-full bg-forest-700 px-6 py-4 text-sm font-bold text-white">Browse more products</Link><Link to="/" className="rounded-full border border-forest-950/15 px-6 py-4 text-sm font-bold">Back to home</Link></div></div></main></div>;
 
